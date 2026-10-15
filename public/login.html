@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="sq"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hyrje – Studio Kontabiliteti</title>
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#eef1f5;font-family:'Segoe UI',Arial,sans-serif;color:#1f2937}
+form{background:#fff;border:1px solid #d9dee7;border-radius:8px;padding:32px;width:340px;max-width:90vw}
+h1{font-size:1.25em;margin:0 0 4px;color:#1f2a44}p{margin:0 0 20px;color:#6b7280;font-size:.9em}
+label{display:block;font-size:.85em;margin:12px 0 4px;color:#4b5563}
+input{width:100%;box-sizing:border-box;padding:10px;border:1px solid #cfd5df;border-radius:5px;font-size:1em}
+button{width:100%;margin-top:20px;padding:11px;border:0;border-radius:5px;background:#1f2a44;color:#fff;font-size:1em;cursor:pointer}
+#e{color:#b4443b;font-size:.9em;margin-top:12px;min-height:1.2em}
+</style></head><body>
+<form id="f"><h1>Studio Kontabiliteti</h1><p>Hyr me llogarinë tënde</p>
+<label>Email</label><input id="em" type="email" autocomplete="username" required>
+<label>Fjalëkalimi</label><input id="pw" type="password" autocomplete="current-password" required>
+<button>Hyr</button><div id="e"></div></form>
+<script>
+document.getElementById('f').onsubmit=async function(ev){ev.preventDefault();var e=document.getElementById('e');e.textContent='';
+ try{var r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'crm'},body:JSON.stringify({email:document.getElementById('em').value,password:document.getElementById('pw').value})});
+ if(r.ok){var w=await (await fetch('/api/whoami')).json();if(w.ok)location.href='/';else e.textContent='Hyrja u pranua, por sesioni nuk ruhet: '+(w.reason||'arsye e panjohur')}else e.textContent=(await r.json()).error||'Hyrja dështoi.'}catch(x){e.textContent='Nuk ka lidhje me serverin.'}};
+</script></body></html>
