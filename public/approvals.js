@@ -2,6 +2,7 @@
 (function () {
   var A = window.XAPI, ME = window.CRM_ME; if (!A || !ME || ME.role !== 'admin') return;
   var X = A.X, E = A.E;
+  var HDR = { 'Content-Type': 'application/json', 'X-Requested-With': 'crm' };
   var pane = document.createElement('div'); pane.id = 'treq'; pane.className = 'tab-content'; document.getElementById('detyrat').insertAdjacentElement('afterend', pane);
   var _sw = window.switchTab; window.switchTab = function (t) { _sw(t); if (t === 'treq') draw(); };
   var load = function () { try { return JSON.parse(localStorage.getItem('crmReq') || '[]'); } catch (e) { return []; } };
@@ -34,18 +35,35 @@
     if (r.kind !== 'client') return false; var c = cls().find(function (x) { return String(x.id) === String(r.cid); }); if (!c) return false;
     return (r.changes || []).some(function (ch) { var cur = c[ch.k]; var s = cur == null ? '—' : typeof cur === 'object' ? JSON.stringify(cur) : String(cur); s = s.length > 70 ? s.slice(0, 70) + '…' : s; return s !== ch.from; });
   }
-  function finish(id, st, why) {
-    var L = load(), r = L.find(function (x) { return x.id === id; }); if (!r || r.st !== 'pending') return;
-    r.st = st; r.dec = ME.name; r.decAt = new Date().toISOString(); if (why) r.why = why; save(L);
-    if (typeof re === 'function') re(); draw();
+  async function decide(id, decision, reason) {
+    try {
+      var response = await fetch('/api/store', {
+        method: 'PUT',
+        headers: HDR,
+        body: JSON.stringify({ key: 'crmReq', action: { id: id, decision: decision, reason: reason || '' } })
+      });
+      var result = await response.json().catch(function () { return {}; });
+      if (!response.ok) {
+        alert(result.error || 'Vendimi nuk u ruajt. Rifresko kërkesat dhe provo përsëri.');
+        if (response.status === 409 && window.xLiveSync) await window.xLiveSync(true);
+        draw();
+        return false;
+      }
+      if (window.xLiveSync) await window.xLiveSync(true);
+      else if (typeof re === 'function') re();
+      draw();
+      return true;
+    } catch (error) {
+      alert('Vendimi nuk u ruajt për shkak të një gabimi rrjeti. Kërkesa mbetet në pritje.');
+      return false;
+    }
   }
   window.xReqOk = function (id) {
     var r = load().find(function (x) { return x.id === id; }); if (!r || r.st !== 'pending') return;
     if (stale(r) && !confirm('Vlera aktuale e disa fushave ndryshoi që nga kërkesa. Të zbatohet gjithsesi?')) return;
-    var err = apply(r); if (err) return alert(err);
-    finish(id, 'approved');
+    decide(id, 'approved');
   };
-  window.xReqNo = function (id) { var why = prompt('Arsyeja e refuzimit (do t’i shfaqet kolegut):', ''); if (why === null) return; finish(id, 'rejected', why); };
+  window.xReqNo = function (id) { var r = load().find(function (x) { return x.id === id; }); if (!r || r.st !== 'pending') return; var why = prompt('Arsyeja e refuzimit (do t’i shfaqet kolegut):', ''); if (why === null) return; decide(id, 'rejected', why); };
   function draw() {
     var L = load(), P = L.filter(function (r) { return r.st === 'pending'; }), D = L.filter(function (r) { return r.st !== 'pending'; }).slice(-15).reverse();
     var card = function (r, done) {
