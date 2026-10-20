@@ -1,9 +1,123 @@
-import { sql, ensure, me, audit, wrap, notify, KEYS, ARRAY_KEYS } from './_lib.js';
+import { sql, sqlTransaction, ensure, me, audit, wrap, notify, KEYS, ARRAY_KEYS } from './_lib.js';
+import { randomUUID } from 'node:crypto';
 import { diffNotifs, diffClients, diffDecl, diffReq } from './_notify.js';
-import { checkX, events, divertClients, divertContracts, checkAssign, dupNipt, clientLines } from './_perm.js';
+import { checkX, events, divertClients, divertContracts, checkAssign, dupNipt, clientLines, clientReferences } from './_perm.js';
 import { scopeX, unscopeX } from './_scope.js';
 import { keepSecrets, encClients, decClients, blankClients } from './_crypto.js';
 import { mergeJson } from './_merge.js';
+import { resolveApprovalState } from './_approval.js';
+import { prepareApplicationConversion } from './_workflow.js';
+
+async function convertApplication(req, res, user, input) {
+  const rows = await sql`SELECT key, value, version FROM kv WHERE key IN ('crmAplikime', 'crmClients')`;
+  const byKey = new Map(rows.map((row) => [row.key, row]));
+  const applicationsRow = byKey.get('crmAplikime');
+  const clientsRow = byKey.get('crmClients');
+  if (!applicationsRow) return res.status(404).json({ error: 'Nuk u gjetën aplikime.' });
+
+  const clientsValue = clientsRow ? decClients(clientsRow.value) : '[]';
+  const currentClients = JSON.parse(clientsValue);
+  let nextId = Date.now();
+  const ids = new Set(currentClients.map((client) => String(client.id)));
+  while (ids.has(String(nextId))) nextId++;
+  const conversion = prepareApplicationConversion({
+    clientsValue,
+    applicationsValue: applicationsRow.value,
+    applicationId: input.applicationId,
+    nipt: input.nipt,
+    approvalDate: input.approvalDate,
+    prepaid: input.prepaid,
+    now: new Date().toISOString(),
+    nextId: () => nextId,
+  });
+  if (conversion.error) return res.status(conversion.status).json({ error: conversion.error });
+
+  const storedClients = encClients(conversion.clientsValue);
+  const writes = [
+    { key: 'crmAplikime', row: applicationsRow, value: conversion.applicationsValue },
+    { key: 'crmClients', row: clientsRow, value: storedClients },
+  ];
+  const parameters = [];
+  const guards = writes.map(({ key, row, value }) => {
+    const start = parameters.length + 1;
+    parameters.push(key, row ? row.version + 1 : 1, value);
+    return `EXISTS (SELECT 1 FROM kv WHERE key = $${start} AND version = $${start + 1} AND value = $${start + 2})`;
+  });
+
+  try {
+    await sqlTransaction((tx) => [
+      ...writes.map(({ key, row, value }) => row
+        ? tx`UPDATE kv SET value = ${value}, version = version + 1, updated_by = ${user.email}, updated_at = now() WHERE key = ${key} AND version = ${row.version} AND value = ${row.value} RETURNING key`
+        : tx`INSERT INTO kv(key, value, version, updated_by) VALUES(${key}, ${value}, 1, ${user.email}) ON CONFLICT (key) DO NOTHING RETURNING key`),
+      tx`INSERT INTO audit(user_email, action, detail) VALUES(${user.email}, 'application-convert', ${`Aplikimi ${input.applicationId} u konvertua në klient ${conversion.client.id} me NIPT ${conversion.client.nipt}`})`,
+      tx(`SELECT CASE WHEN ${guards.join(' AND ')} THEN 1 ELSE 1 / 0 END AS committed`, parameters),
+    ], { isolationLevel: 'Serializable' });
+  } catch (error) {
+    if (['22012', '40001', '23505'].includes(error.code)) {
+      return res.status(409).json({ error: 'Aplikimi ose klientët ndryshuan ndërkohë. Rifresko dhe provo përsëri.' });
+    }
+    throw error;
+  }
+  return res.json({ ok: true, clientId: conversion.client.id });
+}
+
+async function decideApproval(req, res, user, action) {
+  if (user.role !== 'admin') return res.status(403).json({ error: 'Vetëm administratori mund të vendosë për kërkesat.' });
+  if (!action || typeof action.id !== 'string' || !['approved', 'rejected'].includes(action.decision)) {
+    return res.status(400).json({ error: 'Vendimi për miratim është i pavlefshëm.' });
+  }
+
+  const rows = await sql`SELECT key, value, version FROM kv WHERE key IN ('crmReq', 'crmClients', 'crmX')`;
+  const byKey = new Map(rows.map((row) => [row.key, row]));
+  const requestRow = byKey.get('crmReq');
+  if (!requestRow) return res.status(404).json({ error: 'Nuk ka kërkesa për miratim.' });
+  const clientsRow = byKey.get('crmClients');
+  const xRow = byKey.get('crmX');
+  const result = resolveApprovalState({
+    requestValue: requestRow.value,
+    clientsValue: clientsRow ? decClients(clientsRow.value) : '[]',
+    crmXValue: xRow ? xRow.value : '{}',
+    id: action.id,
+    decision: action.decision,
+    reason: action.reason,
+    actor: user,
+    now: new Date().toISOString(),
+    documentId: randomUUID(),
+  });
+  if (result.error) return res.status(result.status).json({ error: result.error });
+
+  const writes = [{ key: 'crmReq', row: requestRow, value: result.requestValue }];
+  if (result.clientsValue !== clientsRow?.value && action.decision === 'approved') {
+    if (!clientsRow) return res.status(409).json({ error: 'Regjistri i klientëve nuk ekziston.' });
+    writes.push({ key: 'crmClients', row: clientsRow, value: encClients(result.clientsValue) });
+  }
+  if (result.crmXValue !== xRow?.value && action.decision === 'approved') {
+    if (!xRow) return res.status(409).json({ error: 'Regjistri i punës nuk ekziston.' });
+    writes.push({ key: 'crmX', row: xRow, value: result.crmXValue });
+  }
+
+  const params = [];
+  const predicates = writes.map(({ key, row, value }) => {
+    const start = params.length + 1;
+    params.push(key, row.version + 1, value);
+    return `EXISTS (SELECT 1 FROM kv WHERE key = $${start} AND version = $${start + 1} AND value = $${start + 2})`;
+  });
+  try {
+    await sqlTransaction((tx) => [
+      ...writes.map(({ key, row, value }) => tx`UPDATE kv SET value = ${value}, version = version + 1, updated_by = ${user.email}, updated_at = now() WHERE key = ${key} AND version = ${row.version} AND value = ${row.value} RETURNING key`),
+      tx`INSERT INTO audit(user_email, action, detail) VALUES(${user.email}, ${result.auditAction}, ${result.auditDetail})`,
+      tx`INSERT INTO notifs(user_id, text, link) SELECT id, ${`${user.name} ${action.decision === 'approved' ? 'miratoi' : 'refuzoi'} kërkesën: ${result.request.label || result.request.kind}`}, ${JSON.stringify({ t: result.request.cid ? 'client' : 'today', id: result.request.cid })} FROM users WHERE lower(trim(name)) = lower(trim(${result.request.by}))`,
+      tx(`SELECT CASE WHEN ${predicates.join(' AND ')} THEN 1 ELSE 1 / 0 END AS committed`, params),
+    ], { isolationLevel: 'Serializable' });
+  } catch (error) {
+    if (['22012', '40001', '23505'].includes(error.code)) {
+      return res.status(409).json({ error: 'Kërkesa ose të dhënat e lidhura ndryshuan ndërkohë. Rifresko dhe provo përsëri.' });
+    }
+    throw error;
+  }
+
+  return res.json({ ok: true, id: action.id, decision: action.decision });
+}
 
 export default wrap(async (req, res) => {
   await ensure();
@@ -16,8 +130,10 @@ export default wrap(async (req, res) => {
   }
   if (req.method !== 'PUT') return res.status(405).end();
 
-  const { key, value, version = 0, base } = req.body || {};
+  const { key, value, version = 0, base, action, workflow } = req.body || {};
   if (key === 'crmReq' && u.role !== 'admin') return res.status(403).json({ error: 'perm', message: 'Vetëm administratori miraton kërkesat.' });
+  if (key === 'crmReq' && action) return decideApproval(req, res, u, action);
+  if (key === 'crmAplikime' && workflow && workflow.type === 'convert') return convertApplication(req, res, u, workflow);
   if (!KEYS.includes(key) || typeof value !== 'string') return res.status(400).json({ error: 'Kërkesë e pavlefshme.' });
   if (value.length > 3500000) return res.status(413).json({ error: 'Të dhënat janë shumë të mëdha.' });
   let parsed;
@@ -46,17 +162,65 @@ export default wrap(async (req, res) => {
     if (key === 'crmClients') { const d = divertClients(blankClients(cur.value), plain, u); if (d.requests.length) { plain = d.value; diverted = d.requests; } }
     if (key === 'crmX') { const d = divertContracts(cur.value, plain); if (d.requests.length) { plain = d.value; diverted = d.requests; } }
   }
+  if (key === 'crmClients' && cur) {
+    let previous = [], next = [];
+    try {
+      previous = JSON.parse(decClients(cur.value));
+      next = JSON.parse(plain);
+    } catch { return res.status(400).json({ error: 'Struktura e klientëve është e pavlefshme.' }); }
+    const nextIds = new Set(next.map((client) => String(client.id)));
+    const removed = previous.filter((client) => !nextIds.has(String(client.id)));
+    if (removed.length && u.role !== 'admin') {
+      return res.status(403).json({ error: 'perm', message: 'Vetëm administratori mund të fshijë klientë.' });
+    }
+    if (removed.length) {
+      const xJson = ((await sql`SELECT value FROM kv WHERE key = 'crmX'`)[0] || {}).value || '{}';
+      const declarationsJson = ((await sql`SELECT value FROM kv WHERE key = 'crmDeklarimeTVSH'`)[0] || {}).value || '[]';
+      const requestsJson = ((await sql`SELECT value FROM kv WHERE key = 'crmReq'`)[0] || {}).value || '[]';
+      const changesJson = ((await sql`SELECT value FROM kv WHERE key = 'crmNdryshime'`)[0] || {}).value || '[]';
+      const applicationsJson = ((await sql`SELECT value FROM kv WHERE key = 'crmAplikime'`)[0] || {}).value || '[]';
+      for (const client of removed) {
+        const notification = await sql`SELECT 1 FROM notifs WHERE link::jsonb ->> 't' = 'client' AND link::jsonb ->> 'id' = ${String(client.id)} LIMIT 1`;
+        const refs = clientReferences(client, xJson, declarationsJson, requestsJson, changesJson, applicationsJson, notification.length > 0);
+        if (refs.length) {
+          return res.status(403).json({
+            error: 'perm',
+            message: `Klienti ${client.emriKompanise || client.id} ka të dhëna të lidhura (${refs.join(', ')}); arkivoji ose hiqi lidhjet përpara fshirjes.`,
+          });
+        }
+      }
+    }
+  }
   const saveRequests = async () => {
-    const row = (await sql`SELECT value FROM kv WHERE key = 'crmReq'`)[0], at = new Date().toISOString();
-    const add = diverted.map((r) => ({ id: Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4), by: u.name, at, st: 'pending', ...r }));
+    const row = (await sql`SELECT value, version FROM kv WHERE key = 'crmReq'`)[0], at = new Date().toISOString();
+    const add = diverted.map((r) => ({ id: randomUUID(), by: u.name, at, st: 'pending', ...r }));
     const val = JSON.stringify([...(row ? JSON.parse(row.value) : []), ...add]);
-    await sql`INSERT INTO kv(key, value, version, updated_by) VALUES('crmReq', ${val}, 1, ${u.email}) ON CONFLICT (key) DO UPDATE SET value = ${val}, version = kv.version + 1, updated_by = ${u.email}, updated_at = now()`;
-    for (const a of add) await sql`INSERT INTO notifs(user_id, text, link) SELECT id, ${`${u.name} kërkon miratim: ${a.label}${a.op === 'del' ? ' (fshirje)' : ''}`}, ${JSON.stringify({ t: 'req', id: a.id })} FROM users WHERE role = 'admin'`;
-    await audit(u.email, 'request', `${diverted.length} kërkesë/a (${key})`);
+    const expectedVersion = row ? row.version : 0;
+    const saved = await sql`WITH saved AS (
+        INSERT INTO kv(key, value, version, updated_by) VALUES('crmReq', ${val}, 1, ${u.email})
+        ON CONFLICT (key) DO UPDATE SET value = ${val}, version = kv.version + 1, updated_by = ${u.email}, updated_at = now()
+        WHERE kv.version = ${expectedVersion} RETURNING version
+      ), notified AS (
+        INSERT INTO notifs(user_id, text, link)
+        SELECT users.id, ${u.name} || ' kërkon miratim: ' || requests.label || CASE WHEN requests.op = 'del' THEN ' (fshirje)' ELSE '' END,
+          jsonb_build_object('t', 'req', 'id', requests.id)::text
+        FROM saved
+        CROSS JOIN jsonb_to_recordset(${JSON.stringify(add)}::jsonb) AS requests(id text, label text, op text)
+        CROSS JOIN users WHERE users.role = 'admin' RETURNING id
+      ), logged AS (
+        INSERT INTO audit(user_email, action, detail)
+        SELECT ${u.email}, 'request', ${`${diverted.length} kërkesë/a (${key})`} FROM saved RETURNING id
+      )
+      SELECT saved.version FROM saved JOIN logged ON true`;
+    return saved.length > 0;
   };
   if (diverted.length) {   // asgjë tjetër për të ruajtur: vetëm kërkesat
     let same0 = false; try { const norm = (x) => JSON.stringify(JSON.parse(x)); same0 = norm(viewOf()) === norm(plain); } catch { /* vazhdo */ }
-    if (same0) { await saveRequests(); return res.json({ version: cur.version, merged: true, requests: diverted.length, value: plain }); }
+    if (same0) {
+      if (!await saveRequests()) return res.status(409).json({ error: 'Kërkesa ndryshoi ndërkohë. Rifresko dhe provo përsëri.' });
+      return res.json({ version: cur.version, merged: true, requests: diverted.length, value: plain });
+    }
+    return res.status(409).json({ error: 'Veprimi përmban ndryshime që kërkojnë miratim dhe ndryshime të tjera njëkohësisht. Rifresko dhe ruaji veçmas.' });
   }
   if (key === 'crmClients') {   // D-01: NIPT unik edhe në server (mbulon edhe dy kërkesa njëkohësisht pas bashkimit)
     const dup = dupNipt(cur ? viewOf() : '[]', plain);
@@ -69,7 +233,9 @@ export default wrap(async (req, res) => {
   }
   if (key === 'crmX') store = unscopeX(store, cur && cur.value, u);
   if (key === 'crmX' && u.role !== 'admin' && cur) {   // lejet zbatohen këtu, jo vetëm në ndërfaqe
-    const viol = checkX(cur.value, plain, u);
+    const cs = ((await sql`SELECT value FROM kv WHERE key = 'crmClients'`)[0] || {}).value || '[]';
+    const admins = (await sql`SELECT name FROM users WHERE role = 'admin'`).map((x) => x.name);
+    const viol = checkX(cur.value, plain, u, cs, admins);
     if (viol.length) return res.status(403).json({ error: 'perm', message: 'Nuk ke autorizim për: ' + viol.slice(0, 3).join('; ') + '.', violations: viol });
   }
   if (key === 'crmX' && cur) {   // detyra me klient: vetëm përgjegjësi i klientit (ose admini) mund të jetë përgjegjës
@@ -87,20 +253,35 @@ export default wrap(async (req, res) => {
     } catch { /* ruaj normalisht */ }
   }
   // Ruajtje atomike: pranohet vetëm nëse versioni nuk ka ndryshuar ndërkohë
-  const r = await sql`INSERT INTO kv(key, value, version, updated_by) VALUES(${key}, ${store}, 1, ${u.email})
-    ON CONFLICT (key) DO UPDATE SET value = ${store}, version = kv.version + 1, updated_by = ${u.email}, updated_at = now()
-    WHERE kv.version = ${baseVer} RETURNING version`;
-  if (!r.length) return res.status(409).json({ error: 'conflict' });
-  await audit(u.email, merged ? 'save-merge' : 'save', `${key} v${r[0].version}${merged ? ' konflikte:' + conflicts : ''}`);
-  if (key === 'crmX') for (const ev of events(cur ? (u.role === 'admin' ? cur.value : scopeX(cur.value, u)) : '', plain)) await audit(u.email, ev.action, ev.detail);
-  if (diverted.length) await saveRequests();
-  if (key === 'crmClients' && cur) for (const l of clientLines(viewOf(), plain).slice(0, 25)) await audit(u.email, 'client-change', l);
+  const auditRows = [{ action: merged ? 'save-merge' : 'save', detail: `${key} v${baseVer + 1}${merged ? ' konflikte:' + conflicts : ''}` }];
+  if (key === 'crmX') auditRows.push(...events(cur ? (u.role === 'admin' ? cur.value : scopeX(cur.value, u)) : '', plain));
+  if (key === 'crmClients' && cur) auditRows.push(...clientLines(viewOf(), plain).slice(0, 25).map((detail) => ({ action: 'client-change', detail })));
   if (key === 'crmReq') {
     try {
       const old = new Map(JSON.parse((cur && cur.value) || '[]').map((r) => [r.id, r]));
-      for (const r of parsed) { const p0 = old.get(r.id); if (p0 && p0.st === 'pending' && r.st !== 'pending') await audit(u.email, r.st === 'approved' ? 'request-approved' : 'request-rejected', `${r.label} (kërkuar nga ${r.by})${r.why ? ' – ' + r.why : ''}`); }
-    } catch { /* auditimi nuk e prish ruajtjen */ }
+      for (const request of parsed) {
+        const previous = old.get(request.id);
+        if (previous && previous.st === 'pending' && request.st !== 'pending') {
+          auditRows.push({
+            action: request.st === 'approved' ? 'request-approved' : 'request-rejected',
+            detail: `${request.label} (kërkuar nga ${request.by})${request.why ? ' – ' + request.why : ''}`,
+          });
+        }
+      }
+    } catch { return res.status(400).json({ error: 'Lista e kërkesave është e pavlefshme.' }); }
   }
+  const r = await sql`WITH saved AS (
+      INSERT INTO kv(key, value, version, updated_by) VALUES(${key}, ${store}, 1, ${u.email})
+      ON CONFLICT (key) DO UPDATE SET value = ${store}, version = kv.version + 1, updated_by = ${u.email}, updated_at = now()
+      WHERE kv.version = ${baseVer} RETURNING version
+    ), logged AS (
+      INSERT INTO audit(user_email, action, detail)
+      SELECT ${u.email}, event.action, event.detail
+      FROM saved CROSS JOIN jsonb_to_recordset(${JSON.stringify(auditRows)}::jsonb) AS event(action text, detail text)
+      RETURNING id
+    )
+    SELECT saved.version FROM saved WHERE (SELECT count(*) FROM logged) = ${auditRows.length}`;
+  if (!r.length) return res.status(409).json({ error: 'conflict' });
   if (key === 'crmX' || key === 'crmClients' || key === 'crmDeklarimeTVSH' || key === 'crmReq') {
     try {
       const admins = (await sql`SELECT name FROM users WHERE role = 'admin'`).map((x) => x.name);

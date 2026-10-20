@@ -1460,9 +1460,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 currentDokumentiAdmin = event.target.result;
                 document.getElementById('dokumentiAdminShfaq').innerHTML = `
                     <div style="background: #e3f2fd; padding: 10px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
-                        <span>${file.name}</span>
+                        <span>${escapeHtmlValue(file.name)}</span>
                         <div>
-                            <button type="button" class="btn btn-secondary btn-small" onclick="shkarkoDokmentin('${event.target.result}', '${file.name}')" style="margin-right: 5px;">Shkarko</button>
+                            <button type="button" class="btn btn-secondary btn-small" onclick="shkarkoDokmentin(${htmlJsArg(event.target.result)}, ${htmlJsArg(file.name)})" style="margin-right: 5px;">Shkarko</button>
                             <button type="button" class="btn btn-danger btn-small" onclick="fshiDokumentAdmin()">Fshi</button>
                         </div>
                     </div>
@@ -1543,12 +1543,12 @@ function renderAdresat() {
     list.innerHTML = adresatTemp.map((a, i) => `
         <div class="ortak-item">
             <span>
-                ${a.adresa} 
+                ${escapeHtmlValue(a.adresa)}
                 <span style="color: #666; font-size: 0.9em;">(${a.lloji === 'qera' ? 'Kontratë Qeraje' : 'Certifikatë Pronësie'})</span>
-                ${a.dokument ? ' <span style="color: #28a745;">' + a.dokumentEmri + '</span>' : ''}
+                ${a.dokument ? ' <span style="color: #28a745;">' + escapeHtmlValue(a.dokumentEmri) + '</span>' : ''}
             </span>
             <div>
-                ${a.dokument ? `<button type="button" class="btn btn-secondary btn-small" onclick="shkarkoDokmentin('${a.dokument}', '${a.dokumentEmri}')" style="margin-right: 5px;">Shkarko</button>` : ''}
+                ${a.dokument ? `<button type="button" class="btn btn-secondary btn-small" onclick="shkarkoDokmentin(${htmlJsArg(a.dokument)}, ${htmlJsArg(a.dokumentEmri)})" style="margin-right: 5px;">Shkarko</button>` : ''}
                 <button type="button" class="btn btn-danger btn-small" onclick="fshiAdrese(${i})">Fshi</button>
             </div>
         </div>
@@ -1909,8 +1909,8 @@ function renderOrtaket() {
     list.innerHTML = ortaketTemp.map((o, i) => `
         <div class="ortak-item">
             <span>
-                ${o.emri} - ${o.perqindja}%${o.shtet?' · '+o.shtet:''}
-                ${o.dokument ? ' <span style="color: #28a745;">' + o.dokumentEmri + '</span>' : ''}
+                ${escapeHtmlValue(o.emri)} - ${escapeHtmlValue(o.perqindja)}%${o.shtet?' · '+escapeHtmlValue(o.shtet):''}
+                ${o.dokument ? ' <span style="color: #28a745;">' + escapeHtmlValue(o.dokumentEmri) + '</span>' : ''}
             </span>
             <div>
                 ${o.dokument ? `<button type="button" class="btn btn-secondary btn-small" onclick="shikoDokument(${i})" style="margin-right: 5px;">Shiko</button>` : ''}
@@ -1979,6 +1979,12 @@ function shikoDokument(index) {
             renderOrtaket();
         }
 
+        function escapeHtmlValue(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[character]);
+        }
+
         // Render Klientët
         function renderTableKliente(filtered = null) {
             const tbody = document.getElementById('clientTableBody');
@@ -1990,6 +1996,8 @@ function shikoDokument(index) {
             }
 
             tbody.innerHTML = clientsToRender.map(c => {
+                const id = Number(c.id);
+                const safeId = Number.isSafeInteger(id) && id > 0 ? id : null;
                 const statusPageseText = c.statusPagese === 'paguan' ? 'Paguan Rregullisht' :
                                         c.statusPagese === 'vonese' ? 'Me Vonesë' : 'Nuk Paguan';
                 
@@ -1999,23 +2007,23 @@ function shikoDokument(index) {
                 
                 return `
                 <tr>
-                    <td><strong>${c.emriKompanise}</strong></td>
-                    <td>${c.nipt}</td>
-                    <td>${c.administratori}</td>
-                    <td>${c.nrKontakti}<br><small>${c.emailBiznes}</small></td>
+                    <td><strong>${escapeHtmlValue(c.emriKompanise)}</strong></td>
+                    <td>${escapeHtmlValue(c.nipt)}</td>
+                    <td>${escapeHtmlValue(c.administratori)}</td>
+                    <td>${escapeHtmlValue(c.nrKontakti)}<br><small>${escapeHtmlValue(c.emailBiznes)}</small></td>
                     <td class="currency">${parseFloat(c.tarifaMujore).toLocaleString()} Lekë</td>
                     <td>${afatiAdmin}</td>
                     <td>${certifikata}</td>
-                    <td><span class="status-${c.statusPagese}">${statusPageseText}</span></td>
-                    <td><span class="status-${c.statusKlient}">${c.statusKlient === 'aktiv' ? 'Aktiv' : c.statusKlient === 'pezulluar' ? 'Pezulluar' : 'Inaktiv'}</span></td>
+                    <td><span class="status-${escapeHtmlValue(c.statusPagese)}">${statusPageseText}</span></td>
+                    <td><span class="status-${escapeHtmlValue(c.statusKlient)}">${c.statusKlient === 'aktiv' ? 'Aktiv' : c.statusKlient === 'pezulluar' ? 'Pezulluar' : 'Inaktiv'}</span></td>
                     <td>
-                        <button class="btn btn-primary btn-small" onclick="xDosje(${c.id})" style="margin-right: 5px;" title="Dosja e plotë e klientit">Dosja</button>
-                        <button class="btn btn-success btn-small" onclick="openNdryshimModal(${c.id})" style="margin-right: 5px;" title="Regjistro ndryshim">Ndryshim</button>
-                        <button class="btn btn-historik btn-small" onclick="openHistorikModal(${c.id})" style="margin-right: 5px;" title="Shiko historikun">Historik</button>
-<button class="btn btn-secondary btn-small" onclick="shfaqKredencialet(${c.id})" title="Kredencialet">Kredenciale</button>
+                        ${safeId === null ? '<small>ID klienti e pavlefshme</small>' : `<button class="btn btn-primary btn-small" onclick="xDosje(${safeId})" style="margin-right: 5px;" title="Dosja e plotë e klientit">Dosja</button>
+                        <button class="btn btn-success btn-small" onclick="openNdryshimModal(${safeId})" style="margin-right: 5px;" title="Regjistro ndryshim">Ndryshim</button>
+                        <button class="btn btn-historik btn-small" onclick="openHistorikModal(${safeId})" style="margin-right: 5px;" title="Shiko historikun">Historik</button>
+<button class="btn btn-secondary btn-small" onclick="shfaqKredencialet(${safeId})" title="Kredencialet">Kredenciale</button>
 
-                        <button class="btn btn-edit" onclick="editClient(${c.id})" title="Edito">Ndrysho</button>
-                        <button class="btn btn-danger" onclick="deleteClient(${c.id})" title="Fshi">Fshi</button>
+                        <button class="btn btn-edit" onclick="editClient(${safeId})" title="Edito">Ndrysho</button>
+                        <button class="btn btn-danger" onclick="deleteClient(${safeId})" title="Fshi">Fshi</button>`}
                     </td>
                 </tr>
             `}).join('');
@@ -2263,7 +2271,7 @@ function shikoDokument(index) {
             const list = document.getElementById('ortaketListAplikim');
             list.innerHTML = ortaketTempAplikim.map((o, i) => `
                 <div class="ortak-item">
-                    <span>${o.emri} - ${o.perqindja}%${o.shtet?' · '+o.shtet:''}</span>
+                            <span>${escapeHtmlValue(o.emri)} - ${escapeHtmlValue(o.perqindja)}%${o.shtet?' · '+escapeHtmlValue(o.shtet):''}</span>
                     <button class="btn btn-danger btn-small" onclick="fshiOrtakAplikim(${i})">Fshi</button>
                 </div>
             `).join('');
@@ -2286,21 +2294,21 @@ function shikoDokument(index) {
 
             tbody.innerHTML = aplikimeToRender.map(a => `
                 <tr>
-                    <td><strong>${a.emriKompaniseAplikim}</strong></td>
-                    <td>${a.administratoriAplikim}</td>
-                    <td>${a.nrKontaktiAplikim}<br><small>${a.emailAplikim}</small></td>
-                    <td>${new Date(a.dataAplikimit).toLocaleDateString('sq-AL')}</td>
-                    <td class="currency">${parseFloat(a.tarifaMujoreAplikim).toLocaleString()} Lekë</td>
-                    <td><span class="status-${a.statusAplikim}">${
+                    <td><strong>${escapeHtmlValue(a.emriKompaniseAplikim)}</strong></td>
+                    <td>${escapeHtmlValue(a.administratoriAplikim)}</td>
+                    <td>${escapeHtmlValue(a.nrKontaktiAplikim)}<br><small>${escapeHtmlValue(a.emailAplikim)}</small></td>
+                    <td>${escapeHtmlValue(new Date(a.dataAplikimit).toLocaleDateString('sq-AL'))}</td>
+                    <td class="currency">${Number.isFinite(Number(a.tarifaMujoreAplikim)) ? Number(a.tarifaMujoreAplikim).toLocaleString() : '—'} Lekë</td>
+                    <td><span class="status-${escapeHtmlValue(a.statusAplikim)}">${
                         a.statusAplikim === 'pritje' ? 'Në Pritje' :
                         a.statusAplikim === 'aprovuar' ? 'Aprovuar' : 'Refuzuar'
                     }</span></td>
                     <td>
-                        ${a.statusAplikim === 'pritje' ? 
-                            `<button class="btn btn-success btn-small" onclick="openKonvertoModal(${a.id})">Konverto</button>` : 
-                            ''}
-                        <button class="btn btn-edit btn-small" onclick="editAplikim(${a.id})">Ndrysho</button>
-                        <button class="btn btn-danger btn-small" onclick="deleteAplikim(${a.id})">Fshi</button>
+                        ${Number.isSafeInteger(Number(a.id)) && Number(a.id) > 0 ? `
+                            ${a.statusAplikim === 'pritje' ? `<button class="btn btn-success btn-small" onclick="openKonvertoModal(${Number(a.id)})">Konverto</button>` : ''}
+                            <button class="btn btn-edit btn-small" onclick="editAplikim(${Number(a.id)})">Ndrysho</button>
+                            <button class="btn btn-danger btn-small" onclick="deleteAplikim(${Number(a.id)})">Fshi</button>
+                        ` : '<small>ID aplikimi e pavlefshme</small>'}
                     </td>
                 </tr>
             `).join('');
@@ -2400,53 +2408,44 @@ function shikoDokument(index) {
             document.getElementById('niptAprovuar').value = '';
         }
 
-        function konfirmoKonvertim() {
-            const nipt = document.getElementById('niptAprovuar').value.toUpperCase();
+        async function konfirmoKonvertim() {
+            const nipt = document.getElementById('niptAprovuar').value.trim().toUpperCase();
             const dataAprovimit = document.getElementById('dataAprovimit').value;
+            const application = aplikimPerKonvertim;
             
-            if (!nipt || !nipt.match(/[A-Z][0-9]{8}[A-Z]/)) {
+            if (!application || !nipt.match(/^[A-Z][0-9]{8}[A-Z]$/)) {
                 alert('Ju lutem vendosni një NIPT të vlefshëm (format: L12345678M)');
                 return;
             }
-            
-            const newClient = {
-                id: Date.now(),
-                emriKompanise: aplikimPerKonvertim.emriKompaniseAplikim,
-                nipt: nipt,
-                administratori: aplikimPerKonvertim.administratoriAplikim,
-                nrKontakti: aplikimPerKonvertim.nrKontaktiAplikim,
-                emailBiznes: aplikimPerKonvertim.emailAplikim,
-                adresaBiznes: aplikimPerKonvertim.adresaAplikim,
-                tarifaMujore: aplikimPerKonvertim.tarifaMujoreAplikim,
-                xhiroBiznes: aplikimPerKonvertim.xhiroBiznesAplikim,
-                dataKontrate: dataAprovimit,
-                statusKlient: 'aktiv',
-                statusPagese: 'paguan',
-                payPrepaid: !!(document.getElementById('payPrepaid') || {}).checked,
-                dataFaturesFundit: dataAprovimit,
-                ortaket: aplikimPerKonvertim.ortaket,
-                shenimet: `Konvertuar nga aplikimi. ${aplikimPerKonvertim.shenimetAplikim || ''}`,
-                dataKrijimit: new Date().toISOString()
-            };
-            
-            clients.push(newClient);
-            
-            // Përditëso statusin e aplikimit
-            const aplikimIndex = aplikime.findIndex(a => a.id === aplikimPerKonvertim.id);
-            aplikime[aplikimIndex].statusAplikim = 'aprovuar';
-            aplikime[aplikimIndex].niptAprovuar = nipt;
-            aplikime[aplikimIndex].dataAprovimit = dataAprovimit;
-            
-            saveData();
-            renderTableKliente();
-            renderTableAplikime();
-            updateStats();
-            closeKonvertoModal();
-            
-            alert(`Aplikimi u konvertua me sukses në klient aktiv!\nNIPT: ${nipt}`);
-            
-            // Switch to klientet tab
-            xGoKl();
+
+            try {
+                const response = await fetch('/api/store', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'crm' },
+                    body: JSON.stringify({
+                        key: 'crmAplikime',
+                        workflow: {
+                            type: 'convert',
+                            applicationId: application.id,
+                            nipt: nipt,
+                            approvalDate: dataAprovimit,
+                            prepaid: !!(document.getElementById('payPrepaid') || {}).checked
+                        }
+                    })
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    if (response.status === 409 && window.xLiveSync) await window.xLiveSync(true);
+                    alert(result.error || 'Konvertimi nuk u ruajt. Rifresko dhe provo përsëri.');
+                    return;
+                }
+                if (window.xLiveSync) await window.xLiveSync(true);
+                closeKonvertoModal();
+                alert(`Aplikimi u konvertua me sukses në klient aktiv!\nNIPT: ${nipt}`);
+                xGoKl();
+            } catch (error) {
+                alert('Konvertimi nuk u ruajt për shkak të një gabimi rrjeti. Provo përsëri.');
+            }
         }
 
         // Raporte
@@ -2534,7 +2533,7 @@ function shikoDokument(index) {
         // Export/Import
         function exportKliente(format) {
             if (format === 'json') {
-                const dataStr = JSON.stringify(clients, null, 2);
+                const dataStr = JSON.stringify(window.crmRedactClients(clients), null, 2);
                 const blob = new Blob([dataStr], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
@@ -3905,7 +3904,7 @@ renderDetyrat();renderTm();renderLis();
 (function(){
 const KEYS=['crmClients','crmAplikime','crmNdryshime','crmDeklarimeTVSH','crmX'],TD=new Date().toISOString().slice(0,10);
 let okLs=true;try{localStorage.setItem('_t','1');localStorage.removeItem('_t')}catch(e){okLs=false}
-window.xBackup=()=>{const o={};KEYS.forEach(k=>o[k]=localStorage.getItem(k));o._data=TD;const b=new Blob([JSON.stringify(o)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='crm-rezerve-'+TD+'.json';a.click();localStorage.setItem('crmLastBackup',TD);xBk()};
+window.xBackup=()=>{const o={};KEYS.forEach(k=>o[k]=localStorage.getItem(k));o._data=TD;const safe=window.crmRedactBackup(o),b=new Blob([JSON.stringify(safe)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='crm-rezerve-'+TD+'.json';a.click();localStorage.setItem('crmLastBackup',TD);xBk()};
 window.xRestore=ev=>{const f=ev.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result);if(!KEYS.some(k=>o[k]))throw 0;if(!confirm('Kjo do të zëvendësojë të gjitha të dhënat aktuale me kopjen rezervë. Të vazhdohet?'))return;KEYS.forEach(k=>{if(o[k]!=null)localStorage.setItem(k,o[k])});localStorage.setItem('crmLastBackup',TD);location.reload()}catch(e){alert('Ky nuk është skedar i vlefshëm i kopjes rezervë.')}};r.readAsText(f)};
 const k=document.getElementById('klientet');
 k.insertAdjacentHTML('beforeend','<div class="export-section"><div><button class="btn btn-export" onclick="xBackup()">Kopje rezervë e plotë</button> <button class="btn btn-import" onclick="document.getElementById(\'xrest\').click()">Rikthe kopjen rezervë</button><input type="file" id="xrest" accept=".json" style="display:none" onchange="xRestore(event)"></div><small>Ruan klientët, aplikimet, TVSH-në, kontratat, detyrat, dokumentet, doganën, fondet dhe parametrat në një skedar.</small></div>');
@@ -4023,5 +4022,6 @@ A.re();
 <script src="/chat.js"></script>
 <script src="/approvals.js"></script>
 <script src="/audit.js"></script>
+<script src="/data-safety.js"></script>
 </body>
 </html>

@@ -4,14 +4,16 @@ import { SignJWT, jwtVerify } from 'jose';
 
 export class ConfigError extends Error {}
 let _sql;
-// Lazy: pa DATABASE_URL funksioni nuk rrëzohet në import, por kthen mesazh të qartë.
-export const sql = (...a) => {
+const db = () => {
   if (!_sql) {
     if (!process.env.DATABASE_URL) throw new ConfigError('Mungon variabla DATABASE_URL (lidh Neon te Vercel -> Storage dhe bëj Redeploy).');
     _sql = neon(process.env.DATABASE_URL);
   }
-  return _sql(...a);
+  return _sql;
 };
+// Lazy: pa DATABASE_URL moduli importohet, por query kthen mesazh të qartë.
+export const sql = (...a) => db()(...a);
+export const sqlTransaction = (...a) => db().transaction(...a);
 export function configStatus() {
   const miss = ['DATABASE_URL', 'AUTH_SECRET', 'DATA_KEY'].filter((k) => !process.env[k]);
   const bad = [];
