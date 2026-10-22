@@ -1,7 +1,0 @@
-node_modules/
-audit-results/
-test-results/
-coverage/
-.env
-.env.*
-!.env.example
