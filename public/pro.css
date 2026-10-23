@@ -1,0 +1,45 @@
+/* Pamja profesionale: dosja e klientit (faqe e plotë), detyrat e ekipit (tabelë me përgjegjës dhe kohë), kërkesat për miratim. */
+.pf,.tt{max-width:1280px}
+.pf-back{background:none;border:0;color:#475467;cursor:pointer;font-size:14px;padding:4px 0;margin-bottom:10px}
+.pf-back:hover{color:#1f2a44;text-decoration:underline}
+.pf-head{display:flex;gap:16px;align-items:center;flex-wrap:wrap;background:#fff;border:1px solid #e1e5ec;border-radius:10px;padding:18px 20px;margin-bottom:14px}
+.pf-av{width:52px;height:52px;border-radius:12px;background:#1f2a44;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:600;flex:none}
+.pf-ti{flex:1;min-width:240px}
+.pf-ti h2{margin:0 0 6px;font-size:22px;color:#101828}
+.pf-chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;background:#eef1f5;color:#344054;border:1px solid #e1e5ec}
+.chip.ok{background:#e8f5ee;color:#1d7a46;border-color:#c8e6d4}.chip.warn{background:#fff4e0;color:#8a5a00;border-color:#f3dfb4}.chip.bad{background:#fdecea;color:#b4443b;border-color:#f3c9c4}.chip.info{background:#e8eefb;color:#1f3f8f;border-color:#cdd9f3}
+.pf-act{display:flex;gap:8px;flex-wrap:wrap}
+.pf-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px}
+.pf-kpi{background:#fff;border:1px solid #e1e5ec;border-radius:10px;padding:14px 16px}
+.pf-kpi small{color:#667085;display:block;margin-bottom:4px}.pf-kpi b{font-size:20px;color:#101828}.pf-kpi span{display:block;font-size:12px;color:#667085;margin-top:2px}
+.pf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;margin-bottom:14px}
+.pf-card{background:#fff;border:1px solid #e1e5ec;border-radius:10px;padding:16px 18px}
+.pf-card h3{margin:0 0 10px;font-size:15px;color:#101828}
+.pf-dl{display:grid;grid-template-columns:150px 1fr;gap:7px 12px;font-size:14px}
+.pf-dl dt{color:#667085}.pf-dl dd{margin:0;color:#101828;word-break:break-word}
+.pf-tabs{display:flex;gap:2px;border-bottom:1px solid #e1e5ec;margin-bottom:0;flex-wrap:wrap}
+.pf-tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:10px 14px;cursor:pointer;color:#475467;font-size:14px}
+.pf-tabs button.on{border-bottom-color:#1f2a44;color:#101828;font-weight:600}
+.pf-body{background:#fff;border:1px solid #e1e5ec;border-top:0;border-radius:0 0 10px 10px;padding:16px 18px}
+.pf-tbl,.tt-tbl{width:100%;border-collapse:collapse;font-size:14px}
+.pf-tbl th,.tt-tbl th{text-align:left;font-weight:600;color:#475467;font-size:12px;text-transform:uppercase;letter-spacing:.03em;padding:8px 10px;border-bottom:1px solid #e1e5ec;white-space:nowrap}
+.pf-tbl td,.tt-tbl td{padding:10px;border-bottom:1px solid #f0f2f5;vertical-align:top}
+.tt-tbl tr:hover td,.pf-tbl tr:hover td{background:#fafbfc}
+.tt-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:14px}
+.tt-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.tt-bar input,.tt-bar select{padding:8px 10px;border:1px solid #cfd5df;border-radius:6px;font-size:14px;background:#fff}
+.tt-bar input{min-width:240px}
+.tt-wrap{overflow-x:auto}
+.tt-sub{color:#667085;font-size:12px;display:block;margin-top:2px}
+.tt-late td:first-child{box-shadow:inset 3px 0 0 #b4443b}
+.tt-new summary{cursor:pointer;display:inline-block}
+.pf-empty{color:#98a2b3;padding:8px 0}
+.rq{border:1px solid #e1e5ec;border-left:4px solid #b4801e;border-radius:8px;padding:14px 16px;margin-bottom:12px;background:#fff}
+.rq.ok{border-left-color:#1d7a46}.rq.no{border-left-color:#b4443b}
+.rq-h{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px}
+.rq-ch{display:grid;grid-template-columns:200px 1fr auto 1fr;gap:10px;align-items:center;padding:6px 0;border-top:1px solid #f0f2f5;font-size:14px}
+.rq-f{color:#475467;font-weight:600}.rq-old{color:#b4443b;text-decoration:line-through}.rq-new{color:#1d7a46;font-weight:600}.rq-ar{color:#98a2b3}
+.rq-act{display:flex;gap:8px;margin-top:10px}
+.rq-auto{background:#fff8e6;border:1px solid #f3dfb4;border-radius:8px;padding:12px 14px;margin-bottom:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+@media(max-width:720px){.pf-dl{grid-template-columns:1fr}.rq-ch{grid-template-columns:1fr}}
